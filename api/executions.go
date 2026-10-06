@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/blockloglabs/blocklog-go-sdk/models"
 	"github.com/blockloglabs/blocklog-go-sdk/transport"
@@ -29,7 +30,7 @@ func (c *ExecutionsClient) List(ctx context.Context, params *models.ExecutionLis
 			queryParams["status"] = *params.Status
 		}
 		if params.Limit > 0 {
-			queryParams["limit"] = string(rune(params.Limit))
+			queryParams["limit"] = strconv.Itoa(params.Limit)
 		}
 	}
 	err := c.get(ctx, "/executions", &transport.RequestOptions{Params: queryParams}, &result)

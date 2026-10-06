@@ -39,12 +39,12 @@ type ExecutionGatewayRiskRequest struct {
 }
 
 type ExecutionGatewayAuthRequest struct {
-	ExecutionID string                 `json:"execution_id"`
-	Permissions []string               `json:"permissions"`
+	ExecutionID string   `json:"execution_id"`
+	Permissions []string `json:"permissions"`
 }
 
 type ExecutionGatewayConsumptionRequest struct {
-	ExecutionID string  `json:"execution_id"`
-	Tokens      int     `json:"tokens"`
-	Model       string  `json:"model"`
+	ExecutionID string `json:"execution_id"`
+	Tokens      int    `json:"tokens"`
+	Model       string `json:"model"`
 }

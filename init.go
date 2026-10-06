@@ -2,6 +2,7 @@ package blocklog
 
 import (
 	"context"
+	"sync"
 
 	"github.com/blockloglabs/blocklog-go-sdk/config"
 	"github.com/blockloglabs/blocklog-go-sdk/models"
@@ -9,6 +10,7 @@ import (
 
 var (
 	globalClient *Client
+	globalMu     sync.RWMutex
 )
 
 func Init(cfg *config.Config) (*Client, error) {
@@ -16,7 +18,9 @@ func Init(cfg *config.Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	globalMu.Lock()
 	globalClient = client
+	globalMu.Unlock()
 	return client, nil
 }
 
@@ -26,43 +30,50 @@ func InitFromEnv() (*Client, error) {
 }
 
 func GetGlobalClient() *Client {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
 	return globalClient
 }
 
 func Health(ctx context.Context) (*HealthStatus, error) {
-	if globalClient == nil {
+	client := GetGlobalClient()
+	if client == nil {
 		return nil, ErrNotInitialized
 	}
-	return globalClient.Health(ctx)
+	return client.Health(ctx)
 }
 
 func Event(ctx context.Context, eventType string, payload map[string]interface{}, options map[string]interface{}) (*models.IngestResponse, error) {
-	if globalClient == nil {
+	client := GetGlobalClient()
+	if client == nil {
 		return nil, ErrNotInitialized
 	}
-	return globalClient.Event(ctx, eventType, payload, options)
+	return client.Event(ctx, eventType, payload, options)
 }
 
 func Enqueue(ctx context.Context, eventType string, payload map[string]interface{}, options map[string]interface{}) (*models.IngestResponse, error) {
-	if globalClient == nil {
+	client := GetGlobalClient()
+	if client == nil {
 		return nil, ErrNotInitialized
 	}
-	return globalClient.Enqueue(ctx, eventType, payload, options)
+	return client.Enqueue(ctx, eventType, payload, options)
 }
 
 func Flush(ctx context.Context) (*models.IngestResponse, error) {
-	if globalClient == nil {
+	client := GetGlobalClient()
+	if client == nil {
 		return nil, ErrNotInitialized
 	}
-	resp, err := globalClient.Flush(ctx)
+	resp, err := client.Flush(ctx)
 	return resp, err
 }
 
 func Shutdown(ctx context.Context) error {
-	if globalClient == nil {
+	client := GetGlobalClient()
+	if client == nil {
 		return ErrNotInitialized
 	}
-	return globalClient.Shutdown(ctx)
+	return client.Shutdown(ctx)
 }
 
 var ErrNotInitialized = &InitError{"blocklog not initialized: call Init() first"}

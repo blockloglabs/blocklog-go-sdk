@@ -376,11 +376,11 @@ func TestTransport_HTTPMethods(t *testing.T) {
 
 func TestTransport_BuildURL(t *testing.T) {
 	tests := []struct {
-		name       string
-		baseURL    string
-		path       string
-		params     map[string]string
-		expected   string
+		name     string
+		baseURL  string
+		path     string
+		params   map[string]string
+		expected string
 	}{
 		{
 			name:     "simple path",

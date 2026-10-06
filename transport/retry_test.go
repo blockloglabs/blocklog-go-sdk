@@ -156,8 +156,8 @@ func TestRetryPolicy_BackoffIncreases(t *testing.T) {
 
 func TestIsRetryableError(t *testing.T) {
 	tests := []struct {
-		name     string
-		err      error
+		name      string
+		err       error
 		retryable bool
 	}{
 		{"rate limit", ErrRateLimit, true},

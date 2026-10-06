@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -19,19 +20,23 @@ const (
 )
 
 type Config struct {
-	APIKey           string
-	AccessToken      string
-	Endpoint         string
-	BatchSize        int
-	FlushInterval    time.Duration
-	Timeout          time.Duration
-	RetryCount       int
-	EnableSigning    bool
-	EnableCompression bool
+	APIKey             string
+	AccessToken        string
+	Endpoint           string
+	BatchSize          int
+	FlushInterval      time.Duration
+	Timeout            time.Duration
+	RetryCount         int
+	EnableSigning      bool
+	EnableCompression  bool
 	PersistenceEnabled bool
-	Debug            bool
-	SigningKey       string
-	SigningAlg       string
+	// HTTPClient is optional. When present it is used for all SDK requests.
+	HTTPClient *http.Client
+	// UserAgent identifies the calling application. Empty uses the SDK default.
+	UserAgent  string
+	Debug      bool
+	SigningKey string
+	SigningAlg string
 }
 
 func NewConfig() *Config {

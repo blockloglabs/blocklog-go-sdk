@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -8,15 +9,15 @@ import (
 )
 
 var (
-	ErrMissingAuth      = errors.New("missing apiKey/accessToken for authenticated request")
-	ErrAuthentication   = errors.New("authentication failed")
-	ErrAuthorization    = errors.New("authorization failed")
-	ErrNotFound         = errors.New("resource not found")
-	ErrConflict         = errors.New("resource conflict")
-	ErrRateLimit        = errors.New("rate limit exceeded")
-	ErrServerError      = errors.New("server error")
-	ErrValidation       = errors.New("validation error")
-	ErrTransport        = errors.New("transport error")
+	ErrMissingAuth    = errors.New("missing apiKey/accessToken for authenticated request")
+	ErrAuthentication = errors.New("authentication failed")
+	ErrAuthorization  = errors.New("authorization failed")
+	ErrNotFound       = errors.New("resource not found")
+	ErrConflict       = errors.New("resource conflict")
+	ErrRateLimit      = errors.New("rate limit exceeded")
+	ErrServerError    = errors.New("server error")
+	ErrValidation     = errors.New("validation error")
+	ErrTransport      = errors.New("transport error")
 )
 
 func mapHTTPError(statusCode int, message string, body []byte) error {
@@ -36,7 +37,7 @@ func mapHTTPError(statusCode int, message string, body []byte) error {
 	case 500, 502, 503, 504:
 		return ErrServerError
 	default:
-		return fmt.Errorf("%w: %s", ErrTransport, message)
+		return fmt.Errorf("%w: http status %d", ErrTransport, statusCode)
 	}
 }
 
@@ -53,8 +54,16 @@ func NewRetryPolicy(maxRetries int) *RetryPolicy {
 }
 
 func (r *RetryPolicy) Run(fn func() ([]byte, error)) ([]byte, error) {
+	return r.RunContext(context.Background(), fn)
+}
+
+// RunContext retries only retryable errors and stops promptly when ctx is done.
+func (r *RetryPolicy) RunContext(ctx context.Context, fn func() ([]byte, error)) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt <= r.maxRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		result, err := fn()
 		if err == nil {
 			return result, nil
@@ -66,7 +75,11 @@ func (r *RetryPolicy) Run(fn func() ([]byte, error)) ([]byte, error) {
 				break
 			}
 			delay := r.backoff(attempt)
-			time.Sleep(delay)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
 			continue
 		}
 

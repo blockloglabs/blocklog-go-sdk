@@ -1,11 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+This pre-1.0 release is production-oriented but remains **beta** until its API
+contract and backend feature availability are finalized.
+
+- Added the `blocklog.Config` root configuration surface and support for custom
+  HTTP clients and user agents.
+- Added canonical execution-event model types for future cross-SDK integrations.
+- Made transport credential updates concurrency-safe, removed payload logging
+  from debug mode, and made retry waits context-aware.
+- Corrected execution list limit query encoding.
+- Added architecture and low-effort instrumentation documentation plus a
+  compiling basic example.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
 
 ### Added
 - Comprehensive unit test suite for all packages (config, transport, client, api)
@@ -82,5 +94,5 @@ Each release includes:
 ## Links
 
 - [GitHub Releases](https://github.com/blockloglabs/blocklog-go-sdk/releases)
-- [Documentation](https://docs.blocklogsecurity.com)
+- [Documentation](https://blocklogsecurity.com/docs)
 - [Issues](https://github.com/blockloglabs/blocklog-go-sdk/issues)

@@ -9,23 +9,26 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 type Transport struct {
-	baseURL    string
-	apiKey     string
+	baseURL     string
+	apiKey      string
 	accessToken string
-	timeout    time.Duration
-	debug      bool
-	client     *http.Client
+	timeout     time.Duration
+	debug       bool
+	userAgent   string
+	client      *http.Client
+	mu          sync.RWMutex
 }
 
 type RequestOptions struct {
-	JSON     interface{}
-	Params   map[string]string
-	Headers  map[string]string
-	SkipAuth bool
+	JSON          interface{}
+	Params        map[string]string
+	Headers       map[string]string
+	SkipAuth      bool
 	TokenOverride string
 }
 
@@ -33,9 +36,21 @@ type RequestInterceptor func(method, path, url string, headers map[string]string
 type ResponseInterceptor func(method, path string, status int, ok bool)
 
 func NewTransport(baseURL, apiKey, accessToken string, timeout time.Duration, debug bool) *Transport {
+	return NewTransportWithClient(baseURL, apiKey, accessToken, timeout, debug, "", nil)
+}
+
+// NewTransportWithClient creates a transport with an optional custom HTTP client.
+// The caller retains ownership of the supplied client and its transport.
+func NewTransportWithClient(baseURL, apiKey, accessToken string, timeout time.Duration, debug bool, userAgent string, client *http.Client) *Transport {
 	base := strings.TrimRight(baseURL, "/")
 	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
 		base = "https://" + base
+	}
+	if client == nil {
+		client = &http.Client{Timeout: timeout}
+	}
+	if userAgent == "" {
+		userAgent = "blocklog-go/1.0.0"
 	}
 	return &Transport{
 		baseURL:     base,
@@ -43,30 +58,34 @@ func NewTransport(baseURL, apiKey, accessToken string, timeout time.Duration, de
 		accessToken: accessToken,
 		timeout:     timeout,
 		debug:       debug,
-		client: &http.Client{
-			Timeout: timeout,
-		},
+		userAgent:   userAgent,
+		client:      client,
 	}
 }
 
 func (t *Transport) SetAccessToken(token string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.accessToken = token
 }
 
 func (t *Transport) Request(ctx context.Context, method, path string, opts *RequestOptions) ([]byte, error) {
+	t.mu.RLock()
+	baseURL, apiKey, accessToken, userAgent, client := t.baseURL, t.apiKey, t.accessToken, t.userAgent, t.client
+	t.mu.RUnlock()
 	cleanPath := path
 	if !strings.HasPrefix(cleanPath, "/") {
 		cleanPath = "/" + cleanPath
 	}
-	if strings.HasSuffix(t.baseURL, "/api/v1") && strings.HasPrefix(cleanPath, "/api/v1/") {
+	if strings.HasSuffix(baseURL, "/api/v1") && strings.HasPrefix(cleanPath, "/api/v1/") {
 		cleanPath = cleanPath[7:]
-	} else if strings.HasSuffix(t.baseURL, "/api/v1") && cleanPath == "/api/v1" {
+	} else if strings.HasSuffix(baseURL, "/api/v1") && cleanPath == "/api/v1" {
 		cleanPath = ""
-	} else if !strings.HasSuffix(t.baseURL, "/api/v1") && !strings.HasPrefix(cleanPath, "/api/v1/") && cleanPath != "/api/v1" {
+	} else if !strings.HasSuffix(baseURL, "/api/v1") && !strings.HasPrefix(cleanPath, "/api/v1/") && cleanPath != "/api/v1" {
 		cleanPath = "/api/v1" + cleanPath
 	}
 
-	fullURL := t.baseURL + cleanPath
+	fullURL := baseURL + cleanPath
 
 	var body []byte
 	var err error
@@ -83,7 +102,7 @@ func (t *Transport) Request(ctx context.Context, method, path string, opts *Requ
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "blocklog-go/1.0.0")
+	req.Header.Set("User-Agent", userAgent)
 
 	if opts != nil {
 		for k, v := range opts.Headers {
@@ -91,17 +110,17 @@ func (t *Transport) Request(ctx context.Context, method, path string, opts *Requ
 		}
 	}
 
-	token := t.accessToken
+	token := accessToken
 	if opts != nil && opts.TokenOverride != "" {
 		token = opts.TokenOverride
 	}
 	if opts == nil || !opts.SkipAuth {
-		if token == "" && t.apiKey == "" {
+		if token == "" && apiKey == "" {
 			return nil, ErrMissingAuth
 		}
 		authToken := token
 		if authToken == "" {
-			authToken = t.apiKey
+			authToken = apiKey
 		}
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	}
@@ -118,11 +137,7 @@ func (t *Transport) Request(ctx context.Context, method, path string, opts *Requ
 		fmt.Printf("[blocklog] %s %s\n", method, req.URL.String())
 	}
 
-	if opts != nil && opts.JSON != nil && t.debug {
-		fmt.Printf("[blocklog] Request body: %s\n", string(body))
-	}
-
-	resp, err := t.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -135,9 +150,6 @@ func (t *Transport) Request(ctx context.Context, method, path string, opts *Requ
 
 	if t.debug {
 		fmt.Printf("[blocklog] Response status: %d\n", resp.StatusCode)
-		if len(respBody) > 0 {
-			fmt.Printf("[blocklog] Response body: %s\n", string(respBody))
-		}
 	}
 
 	if resp.StatusCode >= 400 {

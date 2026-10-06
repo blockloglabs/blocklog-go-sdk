@@ -21,7 +21,7 @@ func NewBaseClient(transport *transport.Transport, retry *transport.RetryPolicy)
 
 func (c *BaseClient) request(ctx context.Context, method, path string, opts *transport.RequestOptions) ([]byte, error) {
 	if method == "GET" {
-		return c.retry.Run(func() ([]byte, error) {
+		return c.retry.RunContext(ctx, func() ([]byte, error) {
 			return c.transport.Request(ctx, method, path, opts)
 		})
 	}

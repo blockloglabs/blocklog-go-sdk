@@ -4,9 +4,10 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/blockloglabs/blocklog-go-sdk)](https://goreportcard.com/report/github.com/blockloglabs/blocklog-go-sdk)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Official Go SDK for [Blocklog](https://blocklogsecurity.com) — Infrastructure for AI Decision-Making.
-
-Record every decision your AI agents make with cryptographic audit trails, human-in-the-loop approvals, forensic replay, and compliance reporting.
+Official Go SDK for [Blocklog](https://blocklogsecurity.com), execution, control,
+and verification infrastructure for autonomous AI agents. Use it to capture
+agent executions and events today; backend-issued verification information is
+available through the API when enabled for your account.
 
 ## Features
 
@@ -35,17 +36,16 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
+	"os"
 
 	"github.com/blockloglabs/blocklog-go-sdk"
-	"github.com/blockloglabs/blocklog-go-sdk/models"
-	"github.com/google/uuid"
 )
 
 func main() {
-	// Initialize from environment variables (BLOCKLOG_API_KEY or BLOCKLOG_ACCESS_TOKEN)
-	client, err := blocklog.InitFromEnv()
+	client, err := blocklog.NewClient(blocklog.Config{
+		APIKey: os.Getenv("BLOCKLOG_API_KEY"),
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,34 +53,16 @@ func main() {
 
 	ctx := context.Background()
 
-	// Record an AI decision
-	traceID := uuid.New()
-	decision, err := client.Decisions.Create(ctx, &models.DecisionCreateRequest{
-		DecisionType: "TRADE_EXECUTE",
-		Agent:        strPtr("trading-bot"),
-		Asset:        strPtr("AAPL"),
-		Confidence:   float64Ptr(0.95),
-		Inputs: map[string]interface{}{
-			"price": 150.25, "quantity": 100, "signal": "BUY",
-		},
-		Outputs: map[string]interface{}{
-			"order_id": "ord_123", "filled_price": 150.30,
-		},
-		TraceID: &traceID,
-	})
+	_, err = client.Event(ctx, "agent.execution.completed", map[string]interface{}{
+		"agent": "trading-bot", "status": "completed",
+	}, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("Decision recorded: %s\n", decision.ID)
-
-	// Verify cryptographically
-	verify, _ := client.Verify.Decision(ctx, decision.ID)
-	fmt.Printf("Verified: %v\n", verify.Status)
 }
-
-func strPtr(s string) *string { return &s }
-func float64Ptr(f float64) *float64 { return &f }
 ```
+
+See [the basic example](examples/basic) and [architecture notes](docs/architecture.md).
 
 ## Configuration
 
@@ -444,6 +426,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- Documentation: https://docs.blocklogsecurity.com
+- Documentation: https://blocklogsecurity.com/docs
 - Issues: https://github.com/blockloglabs/blocklog-go-sdk/issues
-- Email: support@blocklogsecurity.com
+- Email: founder@blocklogsecurity.com

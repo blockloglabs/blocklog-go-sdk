@@ -158,9 +158,8 @@ This project follows the [Contributor Covenant Code of Conduct](https://www.cont
 ## Getting Help
 
 - Check existing issues and PRs
-- Read the [documentation](https://docs.blocklogsecurity.com)
-- Join our [Discord community](https://discord.gg/blocklog)
-- Email: support@blocklogsecurity.com
+- Read the [documentation](https://blocklogsecurity.com/docs)
+- Email: founder@blocklogsecurity.com
 
 ## License
 

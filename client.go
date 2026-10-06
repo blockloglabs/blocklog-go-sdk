@@ -14,6 +14,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// Config is the primary client configuration. It is an alias for config.Config
+// so applications may use blocklog.Config without importing an internal package.
+type Config = config.Config
+
+// Client provides safe concurrent access to Blocklog's HTTP APIs and event
+// ingestion. A Client should be reused for the lifetime of an application.
 type Client struct {
 	config    *config.Config
 	transport *transport.Transport
@@ -43,16 +49,44 @@ type Client struct {
 	mu             sync.Mutex
 }
 
+// ClientOptions configures legacy client construction. New applications should
+// prefer NewClient(Config{...}); this type remains for compatibility and custom
+// transport injection.
 type ClientOptions struct {
 	Config    *config.Config
 	Transport *transport.Transport
 	Retry     *transport.RetryPolicy
 }
 
-func NewClient(opts *ClientOptions) (*Client, error) {
+// NewClient constructs a Blocklog client. The preferred form is
+// NewClient(blocklog.Config{APIKey: os.Getenv("BLOCKLOG_API_KEY")}). The
+// legacy *ClientOptions form remains supported for backwards compatibility.
+func NewClient(input interface{}) (*Client, error) {
+	var opts *ClientOptions
+	switch v := input.(type) {
+	case Config:
+		cfg := v
+		opts = &ClientOptions{Config: &cfg}
+	case *Config:
+		opts = &ClientOptions{Config: v}
+	case *ClientOptions:
+		opts = v
+	case nil:
+		opts = &ClientOptions{}
+	default:
+		return nil, fmt.Errorf("blocklog: NewClient expects Config or *ClientOptions")
+	}
+	if opts == nil {
+		opts = &ClientOptions{}
+	}
 	cfg := opts.Config
 	if cfg == nil {
 		cfg = config.NewConfig().FromEnv()
+	} else {
+		// Copy user configuration so later caller mutation cannot race the client.
+		copy := *cfg
+		cfg = &copy
+		applyDefaults(cfg)
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -60,7 +94,7 @@ func NewClient(opts *ClientOptions) (*Client, error) {
 
 	tr := opts.Transport
 	if tr == nil {
-		tr = transport.NewTransport(cfg.Endpoint, cfg.APIKey, cfg.AccessToken, cfg.Timeout, cfg.Debug)
+		tr = transport.NewTransportWithClient(cfg.Endpoint, cfg.APIKey, cfg.AccessToken, cfg.Timeout, cfg.Debug, cfg.UserAgent, cfg.HTTPClient)
 	}
 
 	retry := opts.Retry
@@ -97,14 +131,38 @@ func NewClient(opts *ClientOptions) (*Client, error) {
 	return client, nil
 }
 
+func applyDefaults(cfg *config.Config) {
+	defaults := config.NewConfig()
+	if cfg.Endpoint == "" {
+		cfg.Endpoint = defaults.Endpoint
+	}
+	if cfg.Timeout == 0 {
+		cfg.Timeout = defaults.Timeout
+	}
+	if cfg.BatchSize == 0 {
+		cfg.BatchSize = defaults.BatchSize
+	}
+	if cfg.FlushInterval == 0 {
+		cfg.FlushInterval = defaults.FlushInterval
+	}
+	if cfg.SigningAlg == "" {
+		cfg.SigningAlg = defaults.SigningAlg
+	}
+}
+
 func (c *Client) SetAccessToken(token string) *Client {
 	c.transport.SetAccessToken(token)
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.config.AccessToken = token
 	return c
 }
 
 func (c *Client) Config() *config.Config {
-	return c.config
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	copy := *c.config
+	return &copy
 }
 
 func (c *Client) Transport() *transport.Transport {
@@ -122,6 +180,29 @@ func (c *Client) Event(ctx context.Context, eventType string, payload map[string
 	defer c.mu.Unlock()
 
 	return c.eventProcessor.ProcessEvent(ctx, eventType, payload, opts)
+}
+
+// RecordEvent records a canonical AgentEvent immediately. It is the preferred
+// manual-instrumentation entry point when an application has execution and
+// parent-event identifiers; unsupported fields are preserved in the payload or
+// metadata rather than requiring a framework-specific client.
+func (c *Client) RecordEvent(ctx context.Context, event models.AgentEvent) (*models.IngestResponse, error) {
+	if event.EventType == "" {
+		return nil, fmt.Errorf("blocklog: event type is required")
+	}
+	payload := event.Payload
+	if payload == nil {
+		payload = make(map[string]interface{})
+	}
+	options := map[string]interface{}{
+		"idempotency_key": event.ID,
+		"parent_event_id": event.ParentEventID,
+		"immediate":       true,
+	}
+	if event.Metadata != nil {
+		options["agent_metadata"] = event.Metadata
+	}
+	return c.Event(ctx, string(event.EventType), payload, options)
 }
 
 func (c *Client) Enqueue(ctx context.Context, eventType string, payload map[string]interface{}, options map[string]interface{}) (*models.IngestResponse, error) {
@@ -375,6 +456,7 @@ func (p *EventProcessor) serializeEvent(e *EventEnvelope) map[string]interface{}
 		"causality_type":  e.CausalityType,
 		"schema_version":  e.SchemaVersion,
 		"event_version":   e.EventVersion,
+		"agent_type":      e.AgentType,
 		"agent_id":        e.AgentID,
 		"agent_metadata":  e.AgentMetadata,
 	}
@@ -385,10 +467,7 @@ func (p *EventProcessor) Shutdown() {
 }
 
 func generateIdempotencyKey(e *EventEnvelope) string {
-	// Simple hash for idempotency key
-	data := fmt.Sprintf("%s:%s:%v:%v:%v", e.EventType, e.Source, e.TraceID, e.SessionID, e.Payload)
-	// In a real implementation, use a proper hash
-	return fmt.Sprintf("blk_%x", len(data))
+	return "blk_" + uuid.NewString()
 }
 
 func getStringOption(options map[string]interface{}, key, defaultValue string) string {
